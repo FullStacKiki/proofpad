@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react';
-import * as pdfjs from 'pdfjs-dist';
-import workerSrc from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+// Legacy build: Tauri renders with the system WebKit, and the modern build needs Safari 18.4+
+// (Iterator helpers, Map#getOrInsertComputed). On older WebKit it fails at import and blanks the app.
+import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
+import workerSrc from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerSrc;
 
@@ -29,10 +31,11 @@ export function Preview({ data, version, zoom, stale, noBuild, onZoom }: Props) 
       pages.current?.replaceChildren();
       return;
     }
-    let pdf: pdfjs.PDFDocumentProxy | undefined;
+    // pdf.js 6 tears documents down via the loading task (PDFDocumentProxy.destroy was removed).
+    const task = pdfjs.getDocument({ data: data.slice() });
     (async () => {
       try {
-        pdf = await pdfjs.getDocument({ data: data.slice() }).promise;
+        const pdf = await task.promise;
         const dpr = window.devicePixelRatio || 1;
         const wrappers: HTMLElement[] = [];
         for (let n = 1; n <= pdf.numPages; n++) {
@@ -69,7 +72,7 @@ export function Preview({ data, version, zoom, stale, noBuild, onZoom }: Props) 
       } catch (e) {
         console.error('PDF render failed', e);
       } finally {
-        pdf?.destroy();
+        void task.destroy();
       }
     })();
   }, [data, version, zoom]);
