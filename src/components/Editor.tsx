@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
-import { Compartment, EditorState } from '@codemirror/state';
+import { Compartment, EditorState, type Extension } from '@codemirror/state';
 import {
   EditorView,
   drawSelection,
@@ -7,6 +7,7 @@ import {
   highlightActiveLineGutter,
   keymap,
   lineNumbers,
+  type KeyBinding,
 } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
@@ -21,8 +22,25 @@ export interface EditorHandle {
   insert(text: string, cursor?: number): void;
 }
 
+/** Undo/redo stack and its key bindings. */
+export interface UndoConfig {
+  extension: Extension;
+  keymap: readonly KeyBinding[];
+}
+
+/** CodeMirror's own history: the default when no `undo` option is passed. */
+export const localUndo = (): UndoConfig => ({ extension: history(), keymap: historyKeymap });
+
 interface Props {
+  /** Starting text. Read once at mount (remount with a new `key` to load another document). */
   initial: string;
+  /**
+   * Undo/redo stack. Defaults to CodeMirror's history. A collaborative session swaps in an
+   * undo manager that only undoes the local user's edits. Read once at mount.
+   */
+  undo?: UndoConfig;
+  /** Extra extensions added after the built-in ones (e.g. a sync binding). Read once at mount. */
+  extensions?: Extension;
   vim: boolean;
   autocomplete: boolean;
   onChange(text: string): void;
@@ -95,6 +113,7 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(props, ref
 
   useEffect(() => {
     saveHook = () => cb.current.onSave();
+    const undo = props.undo ?? localUndo();
     const state = EditorState.create({
       doc: props.initial,
       extensions: [
@@ -103,12 +122,12 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(props, ref
         lineNumbers(),
         highlightActiveLineGutter(),
         highlightActiveLine(),
-        history(),
+        undo.extension,
         drawSelection(),
         EditorView.lineWrapping,
         latex,
         syntaxHighlighting(highlight),
-        keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
+        keymap.of([...defaultKeymap, ...undo.keymap, indentWithTab]),
         EditorView.contentAttributes.of({
           spellcheck: 'false',
           autocorrect: 'off',
@@ -119,6 +138,7 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(props, ref
         EditorView.updateListener.of((u) => {
           if (u.docChanged) cb.current.onChange(u.state.doc.toString());
         }),
+        props.extensions ?? [],
       ],
     });
     const v = new EditorView({ state, parent: host.current! });
