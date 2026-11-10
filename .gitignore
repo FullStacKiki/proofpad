@@ -1,0 +1,11 @@
+node_modules
+dist
+src-tauri/target
+src-tauri/gen
+.DS_Store
+server/node_modules
+server/data
+*.sqlite
+*.sqlite-journal
+.env
+coverage
